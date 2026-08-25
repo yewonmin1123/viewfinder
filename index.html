@@ -171,10 +171,13 @@
   .co-lines circle{fill:var(--lime);filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
   .callouts{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .45s .1s}
   .callouts.show{opacity:1}
-  .co{position:absolute;transform:translate(-50%,-50%);border-radius:15px;padding:9px 12px;
-    font-size:12px;font-weight:400;letter-spacing:-.02em;line-height:1.5;width:152px;
-    color:rgba(255,255,255,.96)}
-  .co b{display:block;font-size:10px;font-weight:700;color:#E9F27A;letter-spacing:.06em;margin-bottom:3px}
+  .co{position:absolute;transform:translate(-50%,-50%);border-radius:14px;
+    padding:calc(var(--fw) * .021) calc(var(--fw) * .026);
+    font-size:clamp(9.5px, calc(var(--fw) * .0263), 12px);
+    font-weight:400;letter-spacing:-.025em;line-height:1.45;
+    width:clamp(98px, calc(var(--fw) * .272), 152px);
+    word-break:keep-all;color:rgba(255,255,255,.96)}
+  .co b{display:block;font-size:.82em;font-weight:700;color:#E9F27A;letter-spacing:.05em;margin-bottom:3px}
 
   /* scan ring */
   .scan-svg{position:absolute;inset:0;pointer-events:none;transform:rotate(-90deg)}
@@ -665,20 +668,24 @@
   let state = "IDLE", macro = false;
 
   const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+  // the world (1067x600) was framed against a 560px lens; keep the same field of
+  // view when the lens is smaller (phone) or larger, so 1.0x always looks the same
+  const REF_LENS = 560;
+  const viewScale = ()=> (lens.clientWidth || REF_LENS) / REF_LENS;
   function clampCam(){
-    const half = lens.clientWidth/2/zoom;
+    const half = lens.clientWidth/2/(zoom*viewScale());
     cam.x = clamp(cam.x, Math.min(half, W/2), Math.max(W-half, W/2));
     cam.y = clamp(cam.y, Math.min(half, H/2), Math.max(H-half, H/2));
   }
   // world point -> lens-local screen point
   function toScreen(p){
-    const r = lens.clientWidth/2;
-    return { x: r + zoom*(p.x - cam.x), y: r + zoom*(p.y - cam.y) };
+    const r = lens.clientWidth/2, s = zoom*viewScale();
+    return { x: r + s*(p.x - cam.x), y: r + s*(p.y - cam.y) };
   }
 
   function applyScene(){
     clampCam();
-    scene.style.transform = `scale(${zoom}) translate(${W/2-cam.x}px, ${H/2-cam.y}px)`;
+    scene.style.transform = `scale(${zoom*viewScale()}) translate(${W/2-cam.x}px, ${H/2-cam.y}px)`;
     zoomTxt.textContent = zoom.toFixed(1)+"x";
     zoomFill.style.height = ((zoom-1)/2*80+20)+"%";
     updateTarget();
@@ -720,7 +727,7 @@
     const locked = d < r*0.42;
 
     bracket.style.left = p.x+"px"; bracket.style.top = p.y+"px";
-    const bs = clamp(120*zoom, 120, 300);
+    const bs = clamp(120*zoom, 120, 300) * viewScale();
     bracket.style.width = bs+"px"; bracket.style.height = bs+"px";
     distTxt.textContent = (2.4 - (zoom-1)*0.75).toFixed(1)+"m";
 
@@ -749,27 +756,66 @@
     coLines.setAttribute("viewBox", `0 0 ${size} ${size}`);
     coLines.setAttribute("width", size); coLines.setAttribute("height", size);
     let svg = "";
-    coEls.forEach(el=>{
-      const wx=+el.dataset.wx, wy=+el.dataset.wy;
+
+    // 1. seed each card at its authored angle/radius
+    const items = coEls.map(el=>{
       const a=(+el.dataset.ang)*Math.PI/180, rr=(+el.dataset.r)*r;
-      const anchor = toScreen({x:wx, y:wy});
-      let cx = r + Math.cos(a)*rr;
-      let cy = r + Math.sin(a)*rr;
-      const hw = el.offsetWidth/2 + 8, hh = el.offsetHeight/2 + 8;
-      // pull toward centre until every corner sits inside the lens circle
+      return {
+        el,
+        anchor: toScreen({x:+el.dataset.wx, y:+el.dataset.wy}),
+        cx: r + Math.cos(a)*rr,
+        cy: r + Math.sin(a)*rr,
+        hw: el.offsetWidth/2 + 6,
+        hh: el.offsetHeight/2 + 6
+      };
+    });
+
+    // keep a card fully inside the lens circle
+    const containIn = it=>{
       for(let i=0;i<40;i++){
         const worst = Math.max(
-          Math.hypot(cx-hw-r, cy-hh-r), Math.hypot(cx+hw-r, cy-hh-r),
-          Math.hypot(cx-hw-r, cy+hh-r), Math.hypot(cx+hw-r, cy+hh-r));
+          Math.hypot(it.cx-it.hw-r, it.cy-it.hh-r), Math.hypot(it.cx+it.hw-r, it.cy-it.hh-r),
+          Math.hypot(it.cx-it.hw-r, it.cy+it.hh-r), Math.hypot(it.cx+it.hw-r, it.cy+it.hh-r));
         if(worst <= r-6) break;
-        cx += (r-cx)*0.06; cy += (r-cy)*0.06;
+        it.cx += (r-it.cx)*0.06; it.cy += (r-it.cy)*0.06;
       }
+    };
+    items.forEach(containIn);
+
+    // 2. relax: push overlapping cards apart, then re-contain.
+    //    on a small (phone) lens the containment step crowds them together,
+    //    so this is what stops the cards stacking on top of each other.
+    for(let pass=0; pass<24; pass++){
+      let moved = false;
+      for(let i=0;i<items.length;i++){
+        for(let j=i+1;j<items.length;j++){
+          const A=items[i], B=items[j];
+          const dx=B.cx-A.cx, dy=B.cy-A.cy;
+          const ox=(A.hw+B.hw)-Math.abs(dx), oy=(A.hh+B.hh)-Math.abs(dy);
+          if(ox<=0 || oy<=0) continue;      // no overlap
+          moved = true;
+          // separate along the axis needing the least movement
+          if(oy<=ox){
+            const s=(dy>=0?1:-1)*oy/2 + (dy===0?oy/2:0);
+            A.cy-=s; B.cy+=s;
+          }else{
+            const s=(dx>=0?1:-1)*ox/2 + (dx===0?ox/2:0);
+            A.cx-=s; B.cx+=s;
+          }
+        }
+      }
+      items.forEach(containIn);
+      if(!moved) break;
+    }
+
+    // 3. commit positions + leader geometry
+    items.forEach(it=>{
+      const {el, anchor, cx, cy, hw, hh} = it;
       el.style.left = cx+"px"; el.style.top = cy+"px";
-      // dashed leader from card edge toward the anchor
       const vx = anchor.x-cx, vy = anchor.y-cy, len = Math.hypot(vx,vy) || 1;
       const ux = vx/len, uy = vy/len;
-      const t = Math.min(Math.abs(hw/(ux||1e-6)), Math.abs(hh/(uy||1e-6)));
-      const sx = cx + ux*t, sy = cy + uy*t;
+      const tt = Math.min(Math.abs(hw/(ux||1e-6)), Math.abs(hh/(uy||1e-6)));
+      const sx = cx + ux*tt, sy = cy + uy*tt;
       svg += `<path d="M${sx.toFixed(1)} ${sy.toFixed(1)} L${anchor.x.toFixed(1)} ${anchor.y.toFixed(1)}"/>`;
       svg += `<circle cx="${anchor.x.toFixed(1)}" cy="${anchor.y.toFixed(1)}" r="3"/>`;
     });
@@ -945,7 +991,8 @@
   });
   lens.addEventListener("pointermove", e=>{
     if(!drag || state==="SCAN"||state==="CATCH"||macro) return;
-    cam.x -= (e.clientX-drag.x)/zoom; cam.y -= (e.clientY-drag.y)/zoom;
+    const s = zoom*viewScale();
+    cam.x -= (e.clientX-drag.x)/s; cam.y -= (e.clientY-drag.y)/s;
     drag = {x:e.clientX, y:e.clientY};
     applyScene();
   });
@@ -1073,7 +1120,7 @@
   };
 
   addEventListener("keydown", e=>{
-    const st = 30/zoom;
+    const st = 30/(zoom*viewScale());
     if(e.key==="ArrowLeft"){cam.x-=st;applyScene();}
     if(e.key==="ArrowRight"){cam.x+=st;applyScene();}
     if(e.key==="ArrowUp"&&!e.shiftKey) doZoom(.2);
