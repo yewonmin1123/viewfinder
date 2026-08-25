@@ -59,6 +59,11 @@
     background:#101509;cursor:grab;
     transition:transform .5s cubic-bezier(.2,.9,.3,1.2);
     touch-action:none;
+    /* iOS Safari lets <video> ignore overflow:hidden+border-radius clipping on an
+       ancestor (esp. once a transform is involved) — force the circular crop with a
+       mask too, which video layers do respect. */
+    -webkit-mask-image:-webkit-radial-gradient(circle closest-side, #000 100%, transparent 100%);
+    mask-image:radial-gradient(circle closest-side, #000 100%, transparent 100%);
   }
   .bezel.macro-turn .lens{transform:rotate(-26deg)}
   .lens:active{cursor:grabbing}
