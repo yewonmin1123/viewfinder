@@ -194,13 +194,13 @@
   .co-lines circle{fill:var(--lime);filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
   .callouts{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .45s .1s}
   .callouts.show{opacity:1}
-  .co{position:absolute;transform:translate(-50%,-50%);border-radius:14px;
-    padding:calc(var(--fw) * .021) calc(var(--fw) * .026);
-    font-size:clamp(9.5px, calc(var(--fw) * .0263), 12px);
-    font-weight:400;letter-spacing:-.025em;line-height:1.45;
-    width:clamp(98px, calc(var(--fw) * .272), 152px);
+  .co{position:absolute;transform:translate(-50%,-50%);border-radius:11px;
+    padding:calc(var(--fw) * .014) calc(var(--fw) * .018);
+    font-size:clamp(7.5px, calc(var(--fw) * .0181), 9.5px);
+    font-weight:400;letter-spacing:-.025em;line-height:1.32;
+    width:clamp(70px, calc(var(--fw) * .195), 108px);
     word-break:keep-all;color:rgba(255,255,255,.96)}
-  .co b{display:block;font-size:.82em;font-weight:700;color:#E9F27A;letter-spacing:.05em;margin-bottom:3px}
+  .co b{display:block;font-size:.8em;font-weight:700;color:#E9F27A;letter-spacing:.04em;margin-bottom:2px}
 
   /* scan ring */
   .scan-svg{position:absolute;inset:0;pointer-events:none;transform:rotate(-90deg)}
@@ -807,7 +807,7 @@
     // keep-out zones: the subject sits at the lens center, and the zoom
     // readout sits fixed on the right edge — cards must clear both, not
     // just avoid each other.
-    const subjR = r*0.32;
+    const subjR = r*0.42;
     const zr = hudZoom.getBoundingClientRect(), lr = lens.getBoundingClientRect();
     const zoomBox = {
       cx: (zr.left+zr.right)/2 - lr.left, cy: (zr.top+zr.bottom)/2 - lr.top,
