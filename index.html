@@ -452,7 +452,7 @@
                 <span class="on" id="pillTele">망원 TELE</span><span id="pillMacro">접사 MACRO</span>
               </div>
             </div>
-            <div class="hud-zoom">
+            <div class="hud-zoom" id="hudZoom">
               <span id="zoomTxt">1.0x</span>
               <div class="zoom-track"><div class="zoom-fill" id="zoomFill"></div></div>
             </div>
@@ -677,7 +677,7 @@
   const flash = $("flash"), net = $("net"), result = $("result"), fx = $("fx");
   const capBtn = $("capBtn"), swingBtn = $("swingBtn");
   const catchConfirm = $("catchConfirm"), ccAddBtn = $("ccAddBtn");
-  const zoomTxt = $("zoomTxt"), zoomFill = $("zoomFill"), distTxt = $("distTxt");
+  const zoomTxt = $("zoomTxt"), zoomFill = $("zoomFill"), distTxt = $("distTxt"), hudZoom = $("hudZoom");
   const pillTele = $("pillTele"), pillMacro = $("pillMacro");
   const steps = Array.from($("steps").children);
   const bandState = $("bandState"), hapticBar = $("hapticBar"), hapticTxt = $("hapticTxt");
@@ -803,12 +803,47 @@
         it.cx += (r-it.cx)*0.06; it.cy += (r-it.cy)*0.06;
       }
     };
-    items.forEach(containIn);
 
-    // 2. relax: push overlapping cards apart, then re-contain.
-    //    on a small (phone) lens the containment step crowds them together,
-    //    so this is what stops the cards stacking on top of each other.
-    for(let pass=0; pass<24; pass++){
+    // keep-out zones: the subject sits at the lens center, and the zoom
+    // readout sits fixed on the right edge — cards must clear both, not
+    // just avoid each other.
+    const subjR = r*0.32;
+    const zr = hudZoom.getBoundingClientRect(), lr = lens.getBoundingClientRect();
+    const zoomBox = {
+      cx: (zr.left+zr.right)/2 - lr.left, cy: (zr.top+zr.bottom)/2 - lr.top,
+      hw: zr.width/2 + 16, hh: zr.height/2 + 16
+    };
+    // push a card's AABB clear of the circular subject zone at the lens
+    // centre — measured as the true nearest-point distance, not just
+    // centre-to-centre, so corners can't sneak into the keep-out circle.
+    const pushFromCenter = it=>{
+      for(let i=0;i<8;i++){
+        const ddx = Math.max(it.cx-it.hw-r, 0, r-(it.cx+it.hw));
+        const ddy = Math.max(it.cy-it.hh-r, 0, r-(it.cy+it.hh));
+        const d = Math.hypot(ddx,ddy);
+        if(d >= subjR) break;
+        const dx = it.cx-r, dy = it.cy-r, dd = Math.hypot(dx,dy) || 0.001;
+        const ux = dx/dd, uy = dy/dd, need = subjR-d+2;
+        it.cx += ux*need; it.cy += uy*need;
+      }
+    };
+    const pushFromBox = it=>{
+      const dx = it.cx-zoomBox.cx, dy = it.cy-zoomBox.cy;
+      const ox=(it.hw+zoomBox.hw)-Math.abs(dx), oy=(it.hh+zoomBox.hh)-Math.abs(dy);
+      if(ox<=0 || oy<=0) return;
+      if(oy<=ox) it.cy += (dy>=0?1:-1)*oy;
+      else it.cx += (dx>=0?1:-1)*ox;
+    };
+    const settle = it=>{
+      for(let i=0;i<3;i++){ containIn(it); pushFromCenter(it); pushFromBox(it); }
+      containIn(it);
+    };
+    items.forEach(settle);
+
+    // 2. relax: push overlapping cards apart, then re-settle against the
+    //    lens bound + the two keep-out zones. On a small (phone) lens the
+    //    settle step crowds cards together, so this stops them stacking.
+    for(let pass=0; pass<28; pass++){
       let moved = false;
       for(let i=0;i<items.length;i++){
         for(let j=i+1;j<items.length;j++){
@@ -827,7 +862,7 @@
           }
         }
       }
-      items.forEach(containIn);
+      items.forEach(settle);
       if(!moved) break;
     }
 
